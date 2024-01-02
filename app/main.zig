@@ -31,32 +31,31 @@ pub fn main() !void {
             try stdout.print("Invalid encoded value\n", .{});
             std.os.exit(1);
         };
-        if (decoded != .dict) {
-            try stdout.print("Invalid torrent file\n", .{});
-            std.os.exit(1);
-        }
+
+        if (decoded != .dict) invalidTorrentFile();
 
         const tracker = decoded.dict.get("announce");
         const info = decoded.dict.get("info");
-        if (tracker == null or info == null) {
-            try stdout.print("Invalid torrent file\n", .{});
-            std.os.exit(1);
-        }
 
-        if (info.? != .dict) {
-            try stdout.print("Invalid torrent file\n", .{});
-            std.os.exit(1);
-        }
+        if (tracker == null or info == null) invalidTorrentFile();
+        if (info.? != .dict) invalidTorrentFile();
 
         const length = info.?.dict.get("length");
-        if (length == null) {
-            try stdout.print("Invalid torrent file\n", .{});
-            std.os.exit(1);
-        }
+        if (length == null) invalidTorrentFile();
+
+        const encoded_info = try encodeBencode(info.?);
+        var hash: [std.crypto.hash.Sha1.digest_length]u8 = undefined;
+        std.crypto.hash.Sha1.hash(encoded_info, &hash, .{});
 
         try stdout.print("Tracker URL: {s}\n", .{tracker.?.string});
         try stdout.print("Length: {s}\n", .{length.?.int});
+        try stdout.print("Info Hash: {s}\n", .{std.fmt.bytesToHex(hash, .lower)});
     }
+}
+
+fn invalidTorrentFile() void {
+    stdout.print("Invalid torrent file\n", .{}) catch {};
+    std.os.exit(1);
 }
 
 fn writeDecoded(value: Decoded, writer: std.ArrayList(u8).Writer) !void {
@@ -125,27 +124,27 @@ fn countDigits(n: usize) usize {
     return count;
 }
 
-fn decodeBencode(encodedValue: []const u8) !Decoded {
-    switch (encodedValue[0]) {
+fn decodeBencode(encoded_value: []const u8) !Decoded {
+    switch (encoded_value[0]) {
         '0'...'9' => {
-            const firstColon = std.mem.indexOfScalar(u8, encodedValue, ':');
+            const firstColon = std.mem.indexOfScalar(u8, encoded_value, ':');
             if (firstColon == null) return error.InvalidArgument;
 
-            const len = try std.fmt.parseInt(usize, encodedValue[0..firstColon.?], 10);
+            const len = try std.fmt.parseInt(usize, encoded_value[0..firstColon.?], 10);
             const start = firstColon.? + 1;
-            return .{ .string = encodedValue[start .. start + len] };
+            return .{ .string = encoded_value[start .. start + len] };
         },
         'i' => {
-            const end = std.mem.indexOfScalar(u8, encodedValue, 'e');
+            const end = std.mem.indexOfScalar(u8, encoded_value, 'e');
             if (end == null) return error.InvalidArgument;
 
-            return .{ .int = encodedValue[1..end.?] };
+            return .{ .int = encoded_value[1..end.?] };
         },
         'l' => {
             var list = std.ArrayList(Decoded).init(allocator);
             var current: usize = 1;
-            while (encodedValue[current] != 'e' and current < encodedValue.len) {
-                const next = try decodeBencode(encodedValue[current..]);
+            while (encoded_value[current] != 'e' and current < encoded_value.len) {
+                const next = try decodeBencode(encoded_value[current..]);
                 try list.append(next);
                 current += next.len();
             }
@@ -154,10 +153,10 @@ fn decodeBencode(encodedValue: []const u8) !Decoded {
         'd' => {
             var dict = std.StringArrayHashMap(Decoded).init(allocator);
             var current: usize = 1;
-            while (encodedValue[current] != 'e' and current < encodedValue.len) {
-                const key = try decodeBencode(encodedValue[current..]);
+            while (encoded_value[current] != 'e' and current < encoded_value.len) {
+                const key = try decodeBencode(encoded_value[current..]);
                 current += key.len();
-                const value = try decodeBencode(encodedValue[current..]);
+                const value = try decodeBencode(encoded_value[current..]);
                 try dict.put(key.string, value);
                 current += value.len();
             }
@@ -168,4 +167,33 @@ fn decodeBencode(encodedValue: []const u8) !Decoded {
             std.os.exit(1);
         },
     }
+}
+
+fn encodeBencode(decoded_value: Decoded) ![]const u8 {
+    var output = std.ArrayList(u8).init(allocator);
+    const writer = output.writer();
+    switch (decoded_value) {
+        .string => |s| try writer.print("{d}:{s}", .{ s.len, s }),
+        .int => |i| try writer.print("i{s}e", .{i}),
+        .list => |list| {
+            try writer.writeByte('l');
+            for (list) |item| {
+                const encoded = try encodeBencode(item);
+                try output.appendSlice(encoded);
+            }
+            try writer.writeByte('e');
+        },
+        .dict => |dict| {
+            try writer.writeByte('d');
+            var it = dict.iterator();
+            while (it.next()) |item| {
+                const encoded_key = try encodeBencode(.{ .string = item.key_ptr.* });
+                const encoded_value = try encodeBencode(item.value_ptr.*);
+                try output.appendSlice(encoded_key);
+                try output.appendSlice(encoded_value);
+            }
+            try writer.writeByte('e');
+        },
+    }
+    return output.toOwnedSlice();
 }
