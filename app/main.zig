@@ -27,14 +27,22 @@ pub fn main() !void {
 }
 
 fn decodeBencode(encodedValue: []const u8) ![]const u8 {
-    if (encodedValue[0] >= '0' and encodedValue[0] <= '9') {
-        const firstColon = std.mem.indexOf(u8, encodedValue, ":");
-        if (firstColon == null) {
-            return error.InvalidArgument;
-        }
-        return encodedValue[firstColon.? + 1 ..];
-    } else {
-        try stdout.print("Only strings are supported at the moment\n", .{});
-        std.os.exit(1);
+    switch (encodedValue[0]) {
+        '0'...'9' => {
+            const firstColon = std.mem.indexOf(u8, encodedValue, ":");
+            if (firstColon == null) {
+                return error.InvalidArgument;
+            }
+            return encodedValue[firstColon.? + 1 ..];
+        },
+        'i' => {
+            const end = std.mem.indexOfScalar(u8, encodedValue, 'e');
+            if (encodedValue.len < 1 or encodedValue[encodedValue.len - 1] != 'e') return error.InvalidArgument;
+            return encodedValue[1..end.?];
+        },
+        else => {
+            try stdout.print("Only strings are supported at the moment\n", .{});
+            std.os.exit(1);
+        },
     }
 }
