@@ -9,7 +9,7 @@
             "request": "launch",
             "name": "Debug",
             "program": "${workspaceFolder}/main",
-            "args": ["decode", "lli929e10:strawberryee"],
+            "args": ["info", "sample.torrent"],
             "cwd": "${workspaceFolder}"
         }
     ]

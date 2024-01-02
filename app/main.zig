@@ -23,6 +23,39 @@ pub fn main() !void {
         try writeDecoded(decoded, string.writer());
         const jsonStr = try string.toOwnedSlice();
         try stdout.print("{s}\n", .{jsonStr});
+    } else if (std.mem.eql(u8, command, "info")) {
+        const filename = args[2];
+        const file = try std.fs.cwd().openFile(filename, .{});
+        const content = try file.readToEndAlloc(allocator, std.math.maxInt(usize));
+        const decoded = decodeBencode(content) catch {
+            try stdout.print("Invalid encoded value\n", .{});
+            std.os.exit(1);
+        };
+        if (decoded != .dict) {
+            try stdout.print("Invalid torrent file\n", .{});
+            std.os.exit(1);
+        }
+
+        const tracker = decoded.dict.get("announce");
+        const info = decoded.dict.get("info");
+        if (tracker == null or info == null) {
+            try stdout.print("Invalid torrent file\n", .{});
+            std.os.exit(1);
+        }
+
+        if (info.? != .dict) {
+            try stdout.print("Invalid torrent file\n", .{});
+            std.os.exit(1);
+        }
+
+        const length = info.?.dict.get("length");
+        if (length == null) {
+            try stdout.print("Invalid torrent file\n", .{});
+            std.os.exit(1);
+        }
+
+        try stdout.print("Tracker URL: {s}\n", .{tracker.?.string});
+        try stdout.print("Length: {s}\n", .{length.?.int});
     }
 }
 
@@ -74,6 +107,7 @@ const Decoded = union(enum) {
                 var count: usize = 2;
                 var it = dict.iterator();
                 while (it.next()) |item| {
+                    count += item.key_ptr.len + countDigits(item.key_ptr.len) + 1;
                     count += item.value_ptr.len();
                 }
                 break :blk count;
