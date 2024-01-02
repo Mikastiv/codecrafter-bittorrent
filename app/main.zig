@@ -38,6 +38,18 @@ fn writeDecoded(value: Decoded, writer: std.ArrayList(u8).Writer) !void {
             }
             try writer.writeByte(']');
         },
+        .dict => |dict| {
+            try writer.writeByte('{');
+            var it = dict.iterator();
+            var i: usize = 0;
+            while (it.next()) |item| : (i += 1) {
+                try writeDecoded(.{ .string = item.key_ptr.* }, writer);
+                try writer.writeByte(':');
+                try writeDecoded(item.value_ptr.*, writer);
+                if (i != dict.count() - 1) try writer.writeByte(',');
+            }
+            try writer.writeByte('}');
+        },
     }
 }
 
@@ -45,6 +57,7 @@ const Decoded = union(enum) {
     string: []const u8,
     int: []const u8,
     list: []Decoded,
+    dict: std.StringArrayHashMap(Decoded),
 
     fn len(self: @This()) usize {
         return switch (self) {
@@ -54,6 +67,14 @@ const Decoded = union(enum) {
                 var count: usize = 2;
                 for (list) |item| {
                     count += item.len();
+                }
+                break :blk count;
+            },
+            .dict => |dict| blk: {
+                var count: usize = 2;
+                var it = dict.iterator();
+                while (it.next()) |item| {
+                    count += item.value_ptr.len();
                 }
                 break :blk count;
             },
@@ -95,6 +116,18 @@ fn decodeBencode(encodedValue: []const u8) !Decoded {
                 current += next.len();
             }
             return .{ .list = try list.toOwnedSlice() };
+        },
+        'd' => {
+            var dict = std.StringArrayHashMap(Decoded).init(allocator);
+            var current: usize = 1;
+            while (encodedValue[current] != 'e' and current < encodedValue.len) {
+                const key = try decodeBencode(encodedValue[current..]);
+                current += key.len();
+                const value = try decodeBencode(encodedValue[current..]);
+                try dict.put(key.string, value);
+                current += value.len();
+            }
+            return .{ .dict = dict };
         },
         else => {
             try stdout.print("Only strings are supported at the moment\n", .{});
