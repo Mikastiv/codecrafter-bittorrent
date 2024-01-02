@@ -89,7 +89,10 @@ fn decodeBencode(encodedValue: []const u8) !Decoded {
             while (current < end.?) {
                 const next = try decodeBencode(encodedValue[current..end.?]);
                 try list.append(next);
-                current += next.len();
+                if (next == .list)
+                    current = end.?
+                else
+                    current += next.len();
             }
             return .{ .list = try list.toOwnedSlice() };
         },
