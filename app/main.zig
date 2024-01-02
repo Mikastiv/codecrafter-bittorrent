@@ -50,7 +50,13 @@ const Decoded = union(enum) {
         return switch (self) {
             .string => |str| str.len + countDigits(str.len) + 1,
             .int => |i| i.len + 2,
-            .list => 0,
+            .list => |list| blk: {
+                var count: usize = 2;
+                for (list) |item| {
+                    count += item.len();
+                }
+                break :blk count;
+            },
         };
     }
 };
@@ -81,18 +87,12 @@ fn decodeBencode(encodedValue: []const u8) !Decoded {
             return .{ .int = encodedValue[1..end.?] };
         },
         'l' => {
-            const end = std.mem.lastIndexOfScalar(u8, encodedValue, 'e');
-            if (end == null) return error.InvalidArgument;
-
             var list = std.ArrayList(Decoded).init(allocator);
             var current: usize = 1;
-            while (current < end.?) {
-                const next = try decodeBencode(encodedValue[current..end.?]);
+            while (encodedValue[current] != 'e' and current < encodedValue.len) {
+                const next = try decodeBencode(encodedValue[current..]);
                 try list.append(next);
-                if (next == .list)
-                    current = end.?
-                else
-                    current += next.len();
+                current += next.len();
             }
             return .{ .list = try list.toOwnedSlice() };
         },
