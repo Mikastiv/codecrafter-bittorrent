@@ -44,7 +44,7 @@ pub fn main() !void {
 
         var query = std.ArrayList(u8).init(allocator);
         const writer = query.writer();
-        try query.appendSlice("info_hash=");
+        try query.appendSlice("?info_hash=");
         try query.appendSlice(try std.Uri.escapeString(allocator, &torrent.info.hash));
         try query.append('&');
         try query.appendSlice("peer_id=00112233445566778899&");
@@ -54,18 +54,26 @@ pub fn main() !void {
         try writer.print("left={d}&", .{torrent.info.length});
         try query.appendSlice("compact=1");
 
-        var uri = try std.Uri.parse(torrent.tracker);
-        uri.query = query.items;
+        const url = try std.mem.concat(allocator, u8, &.{torrent.tracker, query.items});
+        const uri = try std.Uri.parse(url);
 
         var client = std.http.Client{ .allocator = allocator };
-        const res = try client.fetch(allocator, .{
-            .location = .{
-                .uri = uri,
-            },
-        });
-        if (res.body == null) return error.InvalidResponse;
+        var req = try client.request(.GET, uri, .{.allocator = allocator}, .{});
+        try req.start();
+        try req.finish();
+        try req.wait();
 
-        const decoded = decodeBencode(res.body.?) catch {
+        var body: [2048]u8 = undefined;
+        const len = try req.readAll(&body);
+
+        // const res = try client.fetch(allocator, .{
+        //     .location = .{
+        //         .uri = uri,
+        //     },
+        // });
+        // if (res.body == null) return error.InvalidResponse;
+
+        const decoded = decodeBencode(body[0..len]) catch {
             try stdout.print("Invalid encoded value\n", .{});
             std.os.exit(1);
         };
