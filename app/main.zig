@@ -47,9 +47,19 @@ pub fn main() !void {
         var hash: [std.crypto.hash.Sha1.digest_length]u8 = undefined;
         std.crypto.hash.Sha1.hash(encoded_info, &hash, .{});
 
+        const pieces = info.?.dict.get("pieces");
+        if (pieces == null) invalidTorrentFile();
+        if (pieces.? != .string) invalidTorrentFile();
+
+        var win = std.mem.window(u8, pieces.?.string, 20, 20);
+
         try stdout.print("Tracker URL: {s}\n", .{tracker.?.string});
         try stdout.print("Length: {s}\n", .{length.?.int});
         try stdout.print("Info Hash: {s}\n", .{std.fmt.bytesToHex(hash, .lower)});
+        try stdout.print("Pieces Hash:\n", .{});
+        while (win.next()) |item| {
+            try stdout.print("{s}\n", .{std.fmt.bytesToHex(item[0..20], .lower)});
+        }
     }
 }
 
