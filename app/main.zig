@@ -54,11 +54,11 @@ pub fn main() !void {
         try writer.print("left={d}&", .{torrent.info.length});
         try query.appendSlice("compact=1");
 
-        const url = try std.mem.concat(allocator, u8, &.{torrent.tracker, query.items});
+        const url = try std.mem.concat(allocator, u8, &.{ torrent.tracker, query.items });
         const uri = try std.Uri.parse(url);
 
         var client = std.http.Client{ .allocator = allocator };
-        var req = try client.request(.GET, uri, .{.allocator = allocator}, .{});
+        var req = try client.request(.GET, uri, .{ .allocator = allocator }, .{});
         try req.start();
         try req.finish();
         try req.wait();
@@ -88,8 +88,37 @@ pub fn main() !void {
             const port = std.mem.bytesToValue(u16, peer[4..6]);
             try stdout.print("{d}.{d}.{d}.{d}:{d}\n", .{ ip[0], ip[1], ip[2], ip[3], std.mem.bigToNative(u16, port) });
         }
+    } else if (std.mem.eql(u8, command, "handshake")) {
+        const filename = args[2];
+        const torrent = try parseTorrentFile(filename);
+
+        var it = std.mem.splitScalar(u8, args[3], ':');
+        const ip = it.first();
+        const port = it.next() orelse return error.MissingPort;
+
+        const address = try std.net.Address.resolveIp(ip, try std.fmt.parseInt(u16, port, 10));
+        var stream = try std.net.tcpConnectToAddress(address);
+        const writer = stream.writer();
+        const reader = stream.reader();
+
+        const handshake = Handshake{
+            .info_hash = torrent.info.hash,
+            .peer_id = "00112233445566778899".*,
+        };
+        try writer.writeStruct(handshake);
+
+        const server_handshake = try reader.readStruct(Handshake);
+        try stdout.print("Peer ID: {s}\n", .{std.fmt.bytesToHex(server_handshake.peer_id, .lower)});
     }
 }
+
+const Handshake = extern struct {
+    protocol_length: u8 align(1) = 19,
+    ident: [19]u8 align(1) = "BitTorrent protocol".*,
+    reserved: [8]u8 align(1) = std.mem.zeroes([8]u8),
+    info_hash: [20]u8 align(1),
+    peer_id: [20]u8 align(1),
+};
 
 fn parseTorrentFile(filename: []const u8) !Torrent {
     const file = try std.fs.cwd().openFile(filename, .{});
