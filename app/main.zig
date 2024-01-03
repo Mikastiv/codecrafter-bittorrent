@@ -1,6 +1,7 @@
 const std = @import("std");
 const stdout = std.io.getStdOut().writer();
 const allocator = std.heap.page_allocator;
+const Sha1 = std.crypto.hash.Sha1;
 
 pub fn main() !void {
     const args = try std.process.argsAlloc(allocator);
@@ -25,48 +26,113 @@ pub fn main() !void {
         try stdout.print("{s}\n", .{jsonStr});
     } else if (std.mem.eql(u8, command, "info")) {
         const filename = args[2];
-        const file = try std.fs.cwd().openFile(filename, .{});
-        const content = try file.readToEndAlloc(allocator, std.math.maxInt(usize));
-        const decoded = decodeBencode(content) catch {
-            try stdout.print("Invalid encoded value\n", .{});
-            std.os.exit(1);
-        };
+        const torrent = try parseTorrentFile(filename);
 
-        if (decoded != .dict) invalidTorrentFile();
+        var win = std.mem.window(u8, torrent.info.pieces, 20, 20);
 
-        const tracker = decoded.dict.get("announce");
-        const info = decoded.dict.get("info");
-
-        if (tracker == null or info == null) invalidTorrentFile();
-        if (info.? != .dict) invalidTorrentFile();
-
-        const length = info.?.dict.get("length");
-        if (length == null) invalidTorrentFile();
-
-        const encoded_info = try encodeBencode(info.?);
-        var hash: [std.crypto.hash.Sha1.digest_length]u8 = undefined;
-        std.crypto.hash.Sha1.hash(encoded_info, &hash, .{});
-
-        const piece_length = info.?.dict.get("piece length");
-        if (piece_length == null) invalidTorrentFile();
-        if (piece_length.? != .int) invalidTorrentFile();
-
-        const pieces = info.?.dict.get("pieces");
-        if (pieces == null) invalidTorrentFile();
-        if (pieces.? != .string) invalidTorrentFile();
-
-        var win = std.mem.window(u8, pieces.?.string, 20, 20);
-
-        try stdout.print("Tracker URL: {s}\n", .{tracker.?.string});
-        try stdout.print("Length: {s}\n", .{length.?.int});
-        try stdout.print("Info Hash: {s}\n", .{std.fmt.bytesToHex(hash, .lower)});
-        try stdout.print("Piece Length: {s}\n", .{piece_length.?.int});
+        try stdout.print("Tracker URL: {s}\n", .{torrent.tracker});
+        try stdout.print("Length: {d}\n", .{torrent.info.length});
+        try stdout.print("Info Hash: {s}\n", .{std.fmt.bytesToHex(torrent.info.hash, .lower)});
+        try stdout.print("Piece Length: {d}\n", .{torrent.info.piece_length});
         try stdout.print("Piece Hashes:\n", .{});
         while (win.next()) |item| {
             try stdout.print("{s}\n", .{std.fmt.bytesToHex(item[0..20], .lower)});
         }
+    } else if (std.mem.eql(u8, command, "peers")) {
+        const filename = args[2];
+        const torrent = try parseTorrentFile(filename);
+
+        var query = std.ArrayList(u8).init(allocator);
+        const writer = query.writer();
+        try query.appendSlice("info_hash=");
+        try query.appendSlice(try std.Uri.escapeString(allocator, &torrent.info.hash));
+        try query.append('&');
+        try query.appendSlice("peer_id=00112233445566778899&");
+        try query.appendSlice("port=6881&");
+        try query.appendSlice("uploaded=0&");
+        try query.appendSlice("downloaded=0&");
+        try writer.print("left={d}&", .{torrent.info.length});
+        try query.appendSlice("compact=1");
+
+        var uri = try std.Uri.parse(torrent.tracker);
+        uri.query = query.items;
+
+        var client = std.http.Client{ .allocator = allocator };
+        const res = try client.fetch(allocator, .{
+            .location = .{
+                .uri = uri,
+            },
+        });
+        if (res.body == null) return error.InvalidResponse;
+
+        const decoded = decodeBencode(res.body.?) catch {
+            try stdout.print("Invalid encoded value\n", .{});
+            std.os.exit(1);
+        };
+        if (decoded != .dict) return error.InvalidResponse;
+
+        const peers_entry = decoded.dict.get("peers") orelse return error.InvalidResponse;
+        if (peers_entry != .string) return error.InvalidResponse;
+
+        var peers = std.mem.window(u8, peers_entry.string, 6, 6);
+        while (peers.next()) |peer| {
+            const ip = peer[0..4];
+            const port = std.mem.bytesToValue(u16, peer[4..6]);
+            try stdout.print("{d}.{d}.{d}.{d}:{d}\n", .{ ip[0], ip[1], ip[2], ip[3], std.mem.bigToNative(u16, port) });
+        }
     }
 }
+
+fn parseTorrentFile(filename: []const u8) !Torrent {
+    const file = try std.fs.cwd().openFile(filename, .{});
+    const content = try file.readToEndAlloc(allocator, std.math.maxInt(usize));
+    const decoded = decodeBencode(content) catch {
+        try stdout.print("Invalid encoded value\n", .{});
+        std.os.exit(1);
+    };
+
+    if (decoded != .dict) return error.InvalidTorrentFile;
+
+    const tracker = decoded.dict.get("announce") orelse return error.InvalidTorrentFile;
+    if (tracker != .string) return error.InvalidTorrentFile;
+    const info_entry = decoded.dict.get("info") orelse return error.InvalidTorrentFile;
+    if (info_entry != .dict) return error.InvalidTorrentFile;
+
+    const info = info_entry.dict;
+
+    const length = info.get("length") orelse return error.InvalidTorrentFile;
+    if (length != .int) return error.InvalidTorrentFile;
+
+    const piece_length = info.get("piece length") orelse return error.InvalidTorrentFile;
+    if (piece_length != .int) return error.InvalidTorrentFile;
+
+    const encoded_info = try encodeBencode(info_entry);
+    var hash: [Sha1.digest_length]u8 = undefined;
+    Sha1.hash(encoded_info, &hash, .{});
+
+    const pieces = info.get("pieces") orelse return error.InvalidTorrentFile;
+    if (pieces != .string) return error.InvalidTorrentFile;
+
+    return .{
+        .tracker = tracker.string,
+        .info = .{
+            .length = try std.fmt.parseInt(u32, length.int, 10),
+            .piece_length = try std.fmt.parseInt(u32, piece_length.int, 10),
+            .pieces = pieces.string,
+            .hash = hash,
+        },
+    };
+}
+
+const Torrent = struct {
+    tracker: []const u8,
+    info: struct {
+        length: u32,
+        piece_length: u32,
+        pieces: []const u8,
+        hash: [Sha1.digest_length]u8,
+    },
+};
 
 fn invalidTorrentFile() void {
     stdout.print("Invalid torrent file\n", .{}) catch {};
