@@ -47,6 +47,10 @@ pub fn main() !void {
         var hash: [std.crypto.hash.Sha1.digest_length]u8 = undefined;
         std.crypto.hash.Sha1.hash(encoded_info, &hash, .{});
 
+        const piece_length = info.?.dict.get("piece length");
+        if (piece_length == null) invalidTorrentFile();
+        if (piece_length.? != .int) invalidTorrentFile();
+
         const pieces = info.?.dict.get("pieces");
         if (pieces == null) invalidTorrentFile();
         if (pieces.? != .string) invalidTorrentFile();
@@ -56,7 +60,8 @@ pub fn main() !void {
         try stdout.print("Tracker URL: {s}\n", .{tracker.?.string});
         try stdout.print("Length: {s}\n", .{length.?.int});
         try stdout.print("Info Hash: {s}\n", .{std.fmt.bytesToHex(hash, .lower)});
-        try stdout.print("Pieces Hash:\n", .{});
+        try stdout.print("Piece Length: {s}\n", .{piece_length.?.int});
+        try stdout.print("Piece Hashes:\n", .{});
         while (win.next()) |item| {
             try stdout.print("{s}\n", .{std.fmt.bytesToHex(item[0..20], .lower)});
         }
