@@ -100,7 +100,7 @@ pub fn main() !void {
 
         if (last_block_size > 0) {
             try Request.send(.{ .index = piece_index, .begin = full_blocks_count * block_size, .length = last_block_size }, writer);
-            std.time.sleep(std.time.ns_per_s);
+            std.time.sleep(std.time.ns_per_ms * 50);
 
             const piece_block = try Message.recv(reader);
             std.debug.assert(piece_block.tag == .piece);
