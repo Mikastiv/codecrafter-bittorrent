@@ -66,8 +66,10 @@ pub fn main() !void {
         const piece_index = try std.fmt.parseInt(u32, args[5], 10);
         const torrent = try parseTorrentFile(filename);
 
+        if (torrent.info.pieces.len >= piece_index) return;
+
         const peers = try getPeers(&torrent);
-        const stream = try std.net.tcpConnectToAddress(peers[1]);
+        const stream = try std.net.tcpConnectToAddress(peers[2]);
         const handshake = try doHandshake(stream, torrent.info.hash);
         std.debug.assert(std.mem.eql(u8, &handshake.info_hash, &torrent.info.hash));
 
