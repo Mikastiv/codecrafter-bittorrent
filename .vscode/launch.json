@@ -9,7 +9,7 @@
             "request": "launch",
             "name": "Debug",
             "program": "${workspaceFolder}/main",
-            "args": ["info", "sample.torrent"],
+            "args": ["download_piece", "-o", "/tmp/test-piece-0", "sample.torrent", "0"],
             "cwd": "${workspaceFolder}"
         }
     ]
