@@ -91,7 +91,7 @@ pub fn main() !void {
 
         for (0..full_blocks_count) |i| {
             try Request.send(.{ .index = piece_index, .begin = @intCast(i * block_size), .length = block_size }, writer);
-
+            std.time.sleep(std.time.ns_per_s);
             const piece_block = try Message.recv(reader);
             std.debug.assert(piece_block.tag == .piece);
             const block = try Block.fromBytes(piece_block.payload);
@@ -100,6 +100,7 @@ pub fn main() !void {
 
         if (last_block_size > 0) {
             try Request.send(.{ .index = piece_index, .begin = full_blocks_count * block_size, .length = last_block_size }, writer);
+            std.time.sleep(std.time.ns_per_s);
 
             const piece_block = try Message.recv(reader);
             std.debug.assert(piece_block.tag == .piece);
