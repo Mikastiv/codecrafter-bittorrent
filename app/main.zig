@@ -91,7 +91,7 @@ pub fn main() !void {
 
         for (0..full_blocks_count) |i| {
             try Request.send(.{ .index = piece_index, .begin = @intCast(i * block_size), .length = block_size }, writer);
-            std.time.sleep(std.time.ns_per_s);
+            std.time.sleep(std.time.ns_per_ms * 50);
             const piece_block = try Message.recv(reader);
             std.debug.assert(piece_block.tag == .piece);
             const block = try Block.fromBytes(piece_block.payload);
