@@ -84,14 +84,21 @@ pub fn main() !void {
         const unchoke = try Message.recv(reader);
         std.debug.assert(unchoke.tag == .unchoke);
 
-        const full_blocks_count = torrent.info.piece_length / block_size;
-        const last_block_size = torrent.info.piece_length % block_size;
-
         const piece = try allocator.alloc(u8, torrent.info.piece_length);
+        const piece_length = blk: {
+            if (piece_index == torrent.info.pieces.len - 1) {
+                const rem = torrent.info.length % torrent.info.piece_length;
+                if (rem != 0) break :blk rem;
+            }
+            break :blk torrent.info.piece_length;
+        };
+
+        const full_blocks_count = piece_length / block_size;
+        const last_block_size = piece_length % block_size;
 
         for (0..full_blocks_count) |i| {
             try Request.send(.{ .index = piece_index, .begin = @intCast(i * block_size), .length = block_size }, writer);
-            std.time.sleep(std.time.ns_per_ms * 50);
+
             const piece_block = try Message.recv(reader);
             std.debug.assert(piece_block.tag == .piece);
             const block = try Block.fromBytes(piece_block.payload);
@@ -100,7 +107,6 @@ pub fn main() !void {
 
         if (last_block_size > 0) {
             try Request.send(.{ .index = piece_index, .begin = full_blocks_count * block_size, .length = last_block_size }, writer);
-            std.time.sleep(std.time.ns_per_ms * 50);
 
             const piece_block = try Message.recv(reader);
             std.debug.assert(piece_block.tag == .piece);
