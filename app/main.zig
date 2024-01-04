@@ -84,7 +84,6 @@ pub fn main() !void {
         const unchoke = try Message.recv(reader);
         std.debug.assert(unchoke.tag == .unchoke);
 
-        const piece = try allocator.alloc(u8, torrent.info.piece_length);
         const piece_length = blk: {
             if (piece_index == torrent.info.pieces.len - 1) {
                 const rem = torrent.info.length % torrent.info.piece_length;
@@ -92,6 +91,7 @@ pub fn main() !void {
             }
             break :blk torrent.info.piece_length;
         };
+        const piece = try allocator.alloc(u8, piece_length);
 
         const full_blocks_count = piece_length / block_size;
         const last_block_size = piece_length % block_size;
