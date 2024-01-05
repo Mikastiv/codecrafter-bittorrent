@@ -38,3 +38,7 @@ pub fn recv(allocator: std.mem.Allocator, reader: anytype) !@This() {
 
     return .{ .tag = tag, .payload = payload };
 }
+
+pub fn deinit(self: @This(), allocator: std.mem.Allocator) void {
+    if (self.payload.len > 0) allocator.free(self.payload);
+}

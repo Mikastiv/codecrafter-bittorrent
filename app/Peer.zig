@@ -43,9 +43,7 @@ pub fn init(
     const reader = stream.reader();
 
     const bitfield = try Message.recv(allocator, reader);
-    defer {
-        if (bitfield.payload.len > 0) allocator.free(bitfield.payload);
-    }
+    defer bitfield.deinit(allocator);
 
     if (bitfield.tag != .bitfield) return error.NoBitfieldMessage;
 

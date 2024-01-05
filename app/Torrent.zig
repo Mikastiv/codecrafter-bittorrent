@@ -76,7 +76,7 @@ pub fn printInfo(self: *const @This(), writer: anytype) !void {
     }
 }
 
-pub fn fetchPeers(self: *const @This(), allocator: std.mem.Allocator) ![]std.net.Address {
+pub fn fetchPeerAddresses(self: *const @This(), allocator: std.mem.Allocator) ![]std.net.Address {
     var query = std.ArrayList(u8).init(allocator);
     defer query.deinit();
     const writer = query.writer();
