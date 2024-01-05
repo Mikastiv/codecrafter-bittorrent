@@ -46,7 +46,7 @@ pub fn hasPiece(self: *const @This(), index: u32) bool {
     return self.bitfield.bits.isSet(index);
 }
 
-fn doHandshake(stream: std.net.Stream, info_hash: [20]u8) !Handshake {
+pub fn doHandshake(stream: std.net.Stream, info_hash: [20]u8) !Handshake {
     const writer = stream.writer();
     const reader = stream.reader();
 

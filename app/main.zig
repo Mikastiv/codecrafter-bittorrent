@@ -58,10 +58,10 @@ pub fn main() !void {
         const port = it.next() orelse return error.MissingPort;
 
         const address = try std.net.Address.resolveIp(ip, try std.fmt.parseInt(u16, port, 10));
-        var peer = try Peer.init(allocator, address, torrent.info.hash);
-        defer peer.deinit();
+        const stream = try std.net.tcpConnectToAddress(address);
+        const handshake = try Peer.doHandshake(stream, torrent.info.hash);
 
-        try stdout.print("Peer ID: {s}\n", .{std.fmt.bytesToHex(peer.handshake.peer_id, .lower)});
+        try stdout.print("Peer ID: {s}\n", .{std.fmt.bytesToHex(handshake.peer_id, .lower)});
     } else if (std.mem.eql(u8, command, "download_piece")) {
         const output_file = args[3];
         const filename = args[4];
