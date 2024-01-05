@@ -163,6 +163,26 @@ pub fn main() !void {
 
             try file_writer.writeAll(piece_data);
         }
+
+        const file = try std.fs.cwd().createFile(output_file, .{});
+        defer file.close();
+        const file_writer = file.writer();
+        for (0..piece_count) |idx| {
+            const piece_name = try std.fmt.allocPrint(allocator, "{s}-{d}", .{ output_file, idx });
+            defer allocator.free(piece_name);
+            const piece_file = try std.fs.cwd().openFile(piece_name, .{});
+            const file_reader = piece_file.reader();
+
+            var buffer: [4096]u8 = undefined;
+            while (true) {
+                const len = try file_reader.readAll(&buffer);
+                try file_writer.writeAll(buffer[0..len]);
+                if (len < buffer.len) break;
+            }
+
+            piece_file.close();
+            try std.fs.cwd().deleteFile(piece_name);
+        }
     }
 }
 
