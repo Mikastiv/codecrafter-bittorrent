@@ -30,6 +30,7 @@ pub fn main() !void {
         var string = std.ArrayList(u8).init(allocator);
         try decoded.writeJson(string.writer());
         const jsonStr = try string.toOwnedSlice();
+        defer allocator.free(jsonStr);
         try stdout.print("{s}\n", .{jsonStr});
     } else if (std.mem.eql(u8, command, "info")) {
         const filename = args[2];

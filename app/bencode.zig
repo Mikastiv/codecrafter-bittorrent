@@ -2,7 +2,7 @@ const std = @import("std");
 
 pub const Decoded = union(enum) {
     string: []const u8,
-    int: i32,
+    int: i64,
     list: []Decoded,
     dict: std.StringArrayHashMap(Decoded),
 
@@ -109,7 +109,7 @@ pub fn decode(allocator: std.mem.Allocator, encoded_value: []const u8) !Decoded 
             const end = std.mem.indexOfScalar(u8, encoded_value, 'e');
             if (end == null) return error.InvalidArgument;
 
-            const int = try std.fmt.parseInt(i32, encoded_value[1..end.?], 10);
+            const int = try std.fmt.parseInt(i64, encoded_value[1..end.?], 10);
             return .{ .int = int };
         },
         'l' => {
