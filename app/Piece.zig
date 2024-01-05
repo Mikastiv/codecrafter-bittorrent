@@ -20,8 +20,8 @@ pub fn init(index: u32, info: *const Torrent.Info) @This() {
         break :blk info.piece_length;
     };
 
-    var block_count = info.piece_length / block_size;
-    const last_block_different = info.piece_length % block_size != 0;
+    var block_count = piece_length / block_size;
+    const last_block_different = piece_length % block_size != 0;
     if (last_block_different) block_count += 1;
 
     return .{

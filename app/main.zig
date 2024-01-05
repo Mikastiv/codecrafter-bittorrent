@@ -73,19 +73,12 @@ pub fn main() !void {
         const peers = try torrent.fetchPeerAddresses(allocator);
         defer allocator.free(peers);
 
-        var peer = try Peer.init(allocator, peers[1], torrent.info.hash);
+        var peer = try Peer.init(allocator, peers[2], torrent.info.hash);
         defer peer.deinit();
-
-        const reader = peer.stream.reader();
-        const writer = peer.stream.writer();
-
-        try Message.send(.{ .tag = .interested, .payload = &.{} }, writer);
-
-        const unchoke = try Message.recv(allocator, reader);
-        std.debug.assert(unchoke.tag == .unchoke);
 
         const piece = Piece.init(piece_index, &torrent.info);
         const piece_data = try piece.download(allocator, &peer);
+        defer allocator.free(piece_data);
 
         var hash: [Sha1.digest_length]u8 = undefined;
         Sha1.hash(piece_data, &hash, .{});
@@ -101,7 +94,6 @@ pub fn main() !void {
         try stdout.print("Piece {d} downloaded to {s}\n", .{ piece_index, output_file });
     } else if (std.mem.eql(u8, command, "download")) {
         const output_file = args[3];
-        _ = output_file; // autofix
         const filename = args[4];
         const torrent = try Torrent.fromFile(allocator, filename);
         defer torrent.deinit();
@@ -115,5 +107,68 @@ pub fn main() !void {
             for (connected_peers.items) |*peer| peer.deinit();
             connected_peers.deinit();
         }
+
+        const max_peers = @min(3, available_peers.items.len);
+        for (0..max_peers) |_| {
+            const peer = Peer.init(allocator, available_peers.pop(), torrent.info.hash) catch continue;
+            try connected_peers.append(peer);
+        }
+
+        var piece_count = torrent.info.length / torrent.info.piece_length;
+        if (torrent.info.length % torrent.info.piece_length != 0) piece_count += 1;
+
+        var piece_queue = std.TailQueue(Piece){};
+        defer {
+            while (piece_queue.pop()) |node| allocator.destroy(node);
+        }
+
+        for (0..piece_count) |idx| {
+            var node = try allocator.create(std.TailQueue(Piece).Node);
+            node.data = Piece.init(@intCast(idx), &torrent.info);
+            piece_queue.append(node);
+        }
+
+        while (piece_queue.len > 0) {
+            if (connected_peers.items.len < max_peers and available_peers.items.len > 0) {
+                const peer = try Peer.init(allocator, available_peers.items[0], torrent.info.hash);
+                _ = available_peers.orderedRemove(0);
+                try connected_peers.append(peer);
+            }
+
+            const node = piece_queue.popFirst().?;
+            const piece = node.data;
+            const peer_idx = getPeerWithPiece(connected_peers.items, piece.index) orelse {
+                piece_queue.append(node);
+                continue;
+            };
+
+            const peer = connected_peers.items[peer_idx];
+            const piece_data = piece.download(allocator, &peer) catch |err| {
+                std.debug.print("{any}\n", .{err});
+                piece_queue.append(node);
+                var bad_peer = connected_peers.orderedRemove(peer_idx);
+                try available_peers.append(bad_peer.addr);
+                bad_peer.deinit();
+                continue;
+            };
+            defer allocator.free(piece_data);
+
+            allocator.destroy(node);
+
+            var buffer: [256]u8 = undefined;
+            const piece_name = try std.fmt.bufPrint(&buffer, "{s}-{d}", .{ output_file, piece.index });
+            const output = try std.fs.cwd().createFile(piece_name, .{});
+            defer output.close();
+            const file_writer = output.writer();
+
+            try file_writer.writeAll(piece_data);
+        }
     }
+}
+
+fn getPeerWithPiece(peers: []const Peer, idx: u32) ?usize {
+    for (peers, 0..) |peer, i| {
+        if (peer.hasPiece(idx)) return i;
+    }
+    return null;
 }

@@ -7,9 +7,17 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug",
+            "name": "Debug download",
             "program": "${workspaceFolder}/main",
-            "args": ["download_piece", "-o", "test-piece-0", "sample.torrent", "0"],
+            "args": ["download", "-o", "test.txt", "sample.torrent"],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug download piece",
+            "program": "${workspaceFolder}/main",
+            "args":  ["download_piece", "-o", "test-piece-0", "sample.torrent", "0"],
             "cwd": "${workspaceFolder}"
         }
     ]
